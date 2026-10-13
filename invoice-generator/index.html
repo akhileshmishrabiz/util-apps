@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>LivingDevOps Invoice Studio</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&family=Great+Vibes&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+/* Layout: editor form on the left, true-size A4 sheet preview on the right; stacks on phones. */
+:root{
+  --bg:#f1f3f2; --panel:#ffffff; --fg:#17191c; --muted:#4f565c; --line:#d3d8d6;
+  --accent:#0b5257; --accent-ink:#ffffff; --field:#ffffff; --warn:#8a4b00;
+  --display:"Fraunces",Georgia,serif; --body:"IBM Plex Sans","Segoe UI",Helvetica,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121615; --panel:#1b2120; --fg:#e8ecea; --muted:#a3adaa; --line:#2f3836;
+  --accent:#4fb3ad; --accent-ink:#0b1514; --field:#141918; --warn:#f0b35a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121615; --panel:#1b2120; --fg:#e8ecea; --muted:#a3adaa; --line:#2f3836;
+  --accent:#4fb3ad; --accent-ink:#0b1514; --field:#141918; --warn:#f0b35a; color-scheme:dark}
+*{box-sizing:border-box}
+html{color-scheme:light}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:14px}
+.app{max-width:1400px;margin:0 auto;padding-inline:16px;padding-block:20px 40px;display:flex;flex-direction:column;gap:18px}
+header.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
+header.top h1{font-family:var(--display);font-weight:600;font-size:26px;margin:0;text-wrap:balance}
+header.top p{margin:2px 0 0;color:var(--muted)}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+button{font:inherit;font-weight:500;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--fg);padding:10px 14px;min-height:42px;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button:disabled{opacity:.6;cursor:progress}
+.grid{display:grid;grid-template-columns:minmax(0,400px) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:900px){.grid{grid-template-columns:minmax(0,1fr)}}
+form{display:flex;flex-direction:column;gap:14px}
+fieldset{border:1px solid var(--line);background:var(--panel);border-radius:8px;margin:0;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+legend{font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:var(--accent);padding:0 6px}
+.row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:500;color:var(--muted);min-width:0}
+input,select,textarea{font:inherit;font-size:14px;color:var(--fg);background:var(--field);border:1px solid var(--line);border-radius:5px;padding:8px 9px;min-height:38px;width:100%}
+textarea{resize:vertical;min-height:58px}
+.hint{font-size:12px;color:var(--muted);margin:0}
+.warn{font-size:12px;color:var(--warn);margin:0}
+.status{font-size:13px;color:var(--muted);min-height:18px}
+.saved{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow:auto}
+.saved-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:6px}
+.saved-item .meta{min-width:0;display:flex;flex-direction:column}
+.saved-item .meta b{font-family:var(--mono);font-weight:500;font-size:13px}
+.saved-item .meta span{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.saved-item button{min-height:34px;padding:6px 10px;font-size:13px}
+.preview-pane{position:sticky;top:env(safe-area-inset-top,0px);min-width:0}
+.sheet-wrap{transform-origin:top left}
+.sheet-box{overflow:hidden;border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.08),0 8px 28px rgba(0,0,0,.12)}
+
+/* The invoice sheet itself: always printed paper colors, regardless of theme. */
+.sheet{width:794px;height:1123px;background:#ffffff;color:#17191c;font-family:var(--body);padding:56px 60px 44px;display:flex;flex-direction:column;gap:26px;font-variant-numeric:tabular-nums}
+.sheet .muted{color:#4a4f55}
+.s-head{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;padding-bottom:22px;border-bottom:2px solid #0b5257}
+.s-brand{display:flex;flex-direction:column;gap:5px}
+.s-logo{font-family:var(--display);font-size:30px;font-weight:600;letter-spacing:-.5px;color:#0b5257}
+.s-co{font-size:14px;font-weight:600}
+.s-small{font-size:12px;line-height:1.6;color:#4a4f55}
+.s-small .m{font-family:var(--mono);color:#17191c}
+.s-title{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.s-title h2{font-family:var(--display);font-weight:500;font-size:38px;letter-spacing:1px;line-height:1;margin:0}
+.s-orig{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#4a4f55}
+.s-kv{display:grid;grid-template-columns:auto auto;column-gap:16px;row-gap:4px;font-size:13px;text-align:right}
+.s-kv .k{color:#4a4f55}.s-kv .v{font-weight:500}.s-kv .mono{font-family:var(--mono)}
+.s-parties{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:32px}
+.s-party{display:flex;flex-direction:column;gap:5px}
+.s-label{font-size:12px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;color:#0b5257}
+.s-name{font-size:18px;font-weight:600}
+.s-line{font-size:13px;color:#4a4f55;white-space:pre-line}
+.s-table .tr{display:grid;grid-template-columns:28px minmax(0,1fr) 76px 40px 130px;gap:12px;padding:11px 14px}
+.s-table .th{background:#0b52570f;border-top:1px solid #0b5257;border-bottom:1px solid #0b5257;font-size:12px;font-weight:600;letter-spacing:.8px;text-transform:uppercase}
+.s-table .td{padding-block:16px;border-bottom:1px solid #c9cdd1;font-size:15px;align-items:start}
+.r{text-align:right}
+.s-desc{display:flex;flex-direction:column;gap:4px}
+.s-desc b{font-weight:600}
+.s-desc span{font-size:13px;color:#4a4f55}
+.s-sum{display:flex;justify-content:space-between;align-items:flex-start;gap:32px}
+.s-words{flex:1;max-width:330px;display:flex;flex-direction:column;gap:6px;font-size:13px;color:#4a4f55;line-height:1.5}
+.s-words .w{font-size:14px;font-weight:500;color:#17191c}
+.s-totals{width:300px;display:flex;flex-direction:column;gap:9px;font-size:14px}
+.s-totals .l{display:flex;justify-content:space-between}
+.s-totals .l span:first-child{color:#4a4f55}
+.s-grand{padding-top:12px;border-top:2px solid #0b5257;align-items:baseline}
+.s-grand span:first-child{font-weight:600;color:#17191c!important}
+.s-grand span:last-child{font-family:var(--display);font-size:28px;font-weight:600;color:#0b5257}
+.s-notes{font-size:13px;color:#4a4f55;line-height:1.5;white-space:pre-line}
+.s-foot{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;padding-top:22px;border-top:1px solid #c9cdd1}
+.s-thanks{display:flex;flex-direction:column;gap:6px;font-size:13px;color:#4a4f55;line-height:1.55;max-width:330px}
+.s-thanks b{font-size:16px;color:#17191c}
+.s-sig{width:250px;display:flex;flex-direction:column;gap:8px;padding:14px 16px;border:1px solid #0b5257;border-radius:6px;background:#0b52570d}
+.s-sig .badge{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#0b5257}
+.s-sig .script{font-family:"Great Vibes","Brush Script MT",cursive;font-size:38px;line-height:1.1;padding-bottom:4px;border-bottom:1px solid #17191c;white-space:nowrap;overflow:hidden}
+.s-sig .det{display:flex;flex-direction:column;gap:2px;font-size:12px;color:#3d4247;line-height:1.45}
+.s-sig .det b{color:#17191c}
+.s-legal{font-size:12px;color:#5f656b;text-align:center}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="top">
+    <div>
+      <h1>Invoice Studio</h1>
+      <p>Fill in the form, check the sheet, then download the PDF.</p>
+    </div>
+    <div class="actions">
+      <button type="button" id="btnNew">New invoice</button>
+      <button type="button" id="btnSave">Save to list</button>
+      <button type="button" id="btnPdf" class="primary">Download PDF</button>
+    </div>
+  </header>
+  <div class="status" id="status" role="status" aria-live="polite"></div>
+
+  <div class="grid">
+    <form id="form" autocomplete="off">
+      <fieldset>
+        <legend>Invoice</legend>
+        <div class="row">
+          <label for="invoiceNo">Invoice no.<input id="invoiceNo" maxlength="16"></label>
+          <label for="invoiceDate">Invoice date<input id="invoiceDate" type="date"></label>
+        </div>
+        <p class="hint">GST invoice numbers must be unique in the financial year and at most 16 characters, e.g. LDO/26-27/0001.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Student</legend>
+        <label for="studentName">Name<input id="studentName"></label>
+        <div class="row">
+          <label for="studentEmail">Email (optional)<input id="studentEmail" type="email"></label>
+          <label for="studentGstin">GSTIN (optional)<input id="studentGstin" maxlength="15" placeholder="Unregistered"></label>
+        </div>
+        <label for="studentAddress">Address (optional)<textarea id="studentAddress" rows="2"></textarea></label>
+        <label for="pos">Place of supply (student's state)<select id="pos"></select></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Course &amp; fee</legend>
+        <label for="course">Course name<input id="course"></label>
+        <div class="row">
+          <label for="amount">Fee<input id="amount" type="number" min="0" step="0.01" inputmode="decimal"></label>
+          <label for="currency">Currency<select id="currency"><option>INR</option><option>USD</option><option>EUR</option><option>GBP</option></select></label>
+        </div>
+        <div class="row">
+          <label for="taxMode">GST treatment<select id="taxMode">
+            <option value="incl">Fee includes GST</option>
+            <option value="excl">GST added on top</option>
+            <option value="export">Export of service (zero-rated, LUT)</option>
+          </select></label>
+          <label for="rate">GST rate (%)<input id="rate" type="number" min="0" max="28" step="0.1"></label>
+        </div>
+        <div class="row">
+          <label for="sac">SAC code<input id="sac"></label>
+          <label for="lut">LUT ARN (exports)<input id="lut" placeholder="AD0907…"></label>
+        </div>
+        <p class="warn" id="taxWarn" hidden></p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Signature &amp; notes</legend>
+        <div class="row">
+          <label for="signatory">Signatory<input id="signatory"></label>
+          <label for="sigTitle">Title<input id="sigTitle"></label>
+        </div>
+        <label for="notes">Notes on invoice (optional)<textarea id="notes" rows="2"></textarea></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Your company</legend>
+        <label for="coName">Legal name<input id="coName"></label>
+        <div class="row">
+          <label for="coGstin">GSTIN<input id="coGstin" maxlength="15"></label>
+          <label for="coCin">CIN<input id="coCin"></label>
+        </div>
+        <div class="row">
+          <label for="coState">Registered state<select id="coState"></select></label>
+          <label for="coWeb">Website<input id="coWeb"></label>
+        </div>
+        <label for="coAddress">Registered address (optional)<textarea id="coAddress" rows="2"></textarea></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Saved invoices (this browser)</legend>
+        <div class="saved" id="savedList"></div>
+      </fieldset>
+    </form>
+
+    <div class="preview-pane" id="pane">
+      <div class="sheet-box" id="sheetBox">
+        <div class="sheet-wrap" id="sheetWrap">
+          <div class="sheet" id="sheet">
+            <div class="s-head">
+              <div class="s-brand">
+                <div class="s-logo">LivingDevOps</div>
+                <div class="s-co" data-f="coName"></div>
+                <div class="s-small" id="sCoLines"></div>
+              </div>
+              <div class="s-title">
+                <h2 id="sTitle">Tax Invoice</h2>
+                <div class="s-orig">Original for recipient</div>
+                <div class="s-kv" id="sKv"></div>
+              </div>
+            </div>
+            <div class="s-parties">
+              <div class="s-party">
+                <div class="s-label">Billed to</div>
+                <div class="s-name" data-f="studentName"></div>
+                <div class="s-line" id="sStudent"></div>
+              </div>
+              <div class="s-party">
+                <div class="s-label">Supplied by</div>
+                <div class="s-name" data-f="coName"></div>
+                <div class="s-line" id="sCoAddr"></div>
+              </div>
+            </div>
+            <div class="s-table">
+              <div class="tr th"><div>#</div><div>Description</div><div>SAC</div><div class="r">Qty</div><div class="r">Taxable value</div></div>
+              <div class="tr td">
+                <div class="muted">1</div>
+                <div class="s-desc"><b data-f="course"></b><span id="sDescSub"></span></div>
+                <div style="font-family:var(--mono);font-size:13px" data-f="sac"></div>
+                <div class="r">1</div>
+                <div class="r" style="font-weight:600" id="sTaxable"></div>
+              </div>
+            </div>
+            <div class="s-sum">
+              <div class="s-words">
+                <div class="s-label">Amount in words</div>
+                <div class="w" id="sWords"></div>
+                <div id="sTaxNote"></div>
+              </div>
+              <div class="s-totals" id="sTotals"></div>
+            </div>
+            <div class="s-notes" id="sNotes"></div>
+            <div style="flex-grow:1"></div>
+            <div class="s-foot">
+              <div class="s-thanks">
+                <b>Thank you for learning with LivingDevOps.</b>
+                <div id="sContact"></div>
+              </div>
+              <div class="s-sig">
+                <div class="badge"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z"></path><path d="M9 12l2 2 4-4"></path></svg>Digitally signed</div>
+                <div class="script" data-f="signatory"></div>
+                <div class="det"><b data-f="signatory"></b><div id="sSigTitle"></div><div id="sSigRef"></div></div>
+              </div>
+            </div>
+            <div class="s-legal" id="sLegal"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const STATES=[["01","Jammu and Kashmir"],["02","Himachal Pradesh"],["03","Punjab"],["04","Chandigarh"],["05","Uttarakhand"],["06","Haryana"],["07","Delhi"],["08","Rajasthan"],["09","Uttar Pradesh"],["10","Bihar"],["11","Sikkim"],["12","Arunachal Pradesh"],["13","Nagaland"],["14","Manipur"],["15","Mizoram"],["16","Tripura"],["17","Meghalaya"],["18","Assam"],["19","West Bengal"],["20","Jharkhand"],["21","Odisha"],["22","Chhattisgarh"],["23","Madhya Pradesh"],["24","Gujarat"],["26","Dadra and Nagar Haveli and Daman and Diu"],["27","Maharashtra"],["29","Karnataka"],["30","Goa"],["31","Lakshadweep"],["32","Kerala"],["33","Tamil Nadu"],["34","Puducherry"],["35","Andaman and Nicobar Islands"],["36","Telangana"],["37","Andhra Pradesh"],["38","Ladakh"],["97","Other Territory"],["96","Outside India"]];
+  const FIELDS=["invoiceNo","invoiceDate","studentName","studentEmail","studentGstin","studentAddress","pos","course","amount","currency","taxMode","rate","sac","lut","signatory","sigTitle","notes","coName","coGstin","coCin","coState","coWeb","coAddress"];
+  const DEFAULTS={invoiceNo:"LDO/26-27/0001",invoiceDate:"2026-10-12",studentName:"Abhishek Singh",studentEmail:"",studentGstin:"",studentAddress:"",pos:"09",course:"9-Week Kubernetes on AWS Bootcamp with DevSecOps and SRE",amount:"25000",currency:"INR",taxMode:"incl",rate:"18",sac:"999293",lut:"",signatory:"Mrinal Pandey",sigTitle:"Director",notes:"",coName:"LivingDevOps Pvt Ltd",coGstin:"09AAGCL4152M1Z5",coCin:"U85500UP2025PTC229215",coState:"09",coWeb:"livingdevops.com",coAddress:""};
+  const KEY_LIST="ldo-invoices-v1", KEY_DRAFT="ldo-invoice-draft-v1";
+  const $=id=>document.getElementById(id);
+  const store={get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}};
+
+  for(const id of ["pos","coState"]){const sel=$(id);STATES.forEach(([c,n])=>{const o=document.createElement("option");o.value=c;o.textContent=c==="96"?n:n+" ("+c+")";sel.appendChild(o)})}
+
+  function readForm(){const d={};FIELDS.forEach(f=>d[f]=$(f).value);return d}
+  function fillForm(d){FIELDS.forEach(f=>{$(f).value=(d&&d[f]!=null)?d[f]:DEFAULTS[f]})}
+  const stateName=c=>{const s=STATES.find(x=>x[0]===c);return s?s[1]:""};
+  const r2=n=>Math.round(n*100)/100;
+  function money(n,cur){try{return new Intl.NumberFormat(cur==="INR"?"en-IN":"en-US",{style:"currency",currency:cur}).format(n)}catch(e){return cur+" "+n.toFixed(2)}}
+  function fmtDate(v){if(!v)return"";const[y,m,d]=v.split("-").map(Number);const M=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];return String(d).padStart(2,"0")+" "+M[m-1]+" "+y}
+
+  const ONES=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];
+  const TENS=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
+  const two=n=>n<20?ONES[n]:TENS[Math.floor(n/10)]+(n%10?" "+ONES[n%10]:"");
+  const three=n=>(n>=100?ONES[Math.floor(n/100)]+" Hundred"+(n%100?" ":""):"")+(n%100?two(n%100):"");
+  function indian(n){if(n===0)return"Zero";const p=[];const cr=Math.floor(n/1e7);n%=1e7;const l=Math.floor(n/1e5);n%=1e5;const t=Math.floor(n/1e3);n%=1e3;if(cr)p.push(indian(cr)+" Crore");if(l)p.push(two(l)+" Lakh");if(t)p.push(two(t)+" Thousand");if(n)p.push(three(n));return p.join(" ")}
+  function intl(n){if(n===0)return"Zero";const p=[];[[1e9,"Billion"],[1e6,"Million"],[1e3,"Thousand"]].forEach(([v,w])=>{if(n>=v){p.push(three(Math.floor(n/v))+" "+w);n%=v}});if(n)p.push(three(n));return p.join(" ")}
+  function words(total,cur){const whole=Math.floor(total),frac=Math.round((total-whole)*100);
+    const names={INR:["Indian Rupees","Paise"],USD:["US Dollars","Cents"],EUR:["Euros","Cents"],GBP:["Pounds Sterling","Pence"]}[cur]||[cur,"Cents"];
+    const w=cur==="INR"?indian(whole):intl(whole);return names[0]+" "+w+(frac?" and "+two(frac)+" "+names[1]:"")+" Only"}
+
+  function calc(d){
+    const amt=Math.max(0,Number(d.amount)||0), rate=Math.max(0,Number(d.rate)||0)/100;
+    let mode=d.taxMode; if(d.currency!=="INR"&&mode!=="export") mode="export";
+    let taxable,tax,total;
+    if(mode==="export"){taxable=r2(amt);tax=0;total=taxable}
+    else if(mode==="incl"){total=r2(amt);taxable=r2(total/(1+rate));tax=r2(total-taxable)}
+    else {taxable=r2(amt);tax=r2(taxable*rate);total=r2(taxable+tax)}
+    const intra=mode!=="export"&&d.pos===d.coState;
+    const c=r2(tax/2), s=r2(tax-c);
+    return {mode,rate:rate*100,taxable,tax,total,intra,cgst:c,sgst:s};
+  }
+
+  function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+
+  function render(){
+    const d=readForm(), c=calc(d), cur=d.currency;
+    document.querySelectorAll("#sheet [data-f]").forEach(el=>{el.textContent=d[el.dataset.f]||""});
+    const coLines=[];
+    if(d.coGstin)coLines.push('GSTIN: <span class="m">'+esc(d.coGstin)+'</span>');
+    if(d.coCin)coLines.push("CIN: "+esc(d.coCin));
+    coLines.push("State: "+esc(stateName(d.coState))+" ("+esc(d.coState)+")");
+    if(d.coWeb)coLines.push(esc(d.coWeb));
+    $("sCoLines").innerHTML=coLines.join("<br>");
+    $("sTitle").textContent=c.mode==="export"?"Tax Invoice":"Tax Invoice";
+    const pos=d.pos==="96"?"Outside India (96)":stateName(d.pos)+" ("+d.pos+")";
+    const kv=[["Invoice no.",d.invoiceNo,"mono"],["Invoice date",fmtDate(d.invoiceDate)],["Place of supply",pos],["Reverse charge","No"]];
+    if(cur!=="INR")kv.push(["Currency",cur]);
+    $("sKv").innerHTML=kv.map(([k,v,m])=>'<div class="k">'+k+'</div><div class="v '+(m||"")+'">'+esc(v||"")+"</div>").join("");
+    const st=["Student, LivingDevOps"];
+    if(d.studentAddress)st.push(d.studentAddress);
+    if(d.studentEmail)st.push(d.studentEmail);
+    st.push("GSTIN: "+(d.studentGstin||"Unregistered"));
+    $("sStudent").textContent=st.join("\n");
+    $("sCoAddr").textContent=(d.coAddress?d.coAddress+"\n":"")+"DevOps education & consulting\nService: Commercial training & coaching";
+    $("sDescSub").textContent=c.mode==="incl"?"Course enrolment fee (GST inclusive: "+money(c.total,cur)+")":"Course enrolment fee";
+    $("sTaxable").textContent=money(c.taxable,cur);
+    const L=(a,b,cls)=>'<div class="l '+(cls||"")+'"><span>'+a+"</span><span>"+b+"</span></div>";
+    let t=L("Taxable value",money(c.taxable,cur));
+    if(c.mode==="export"){t+=L("IGST @ 0% (LUT)",money(0,cur))}
+    else if(c.intra){t+=L("CGST @ "+(c.rate/2)+"%",money(c.cgst,cur))+L("SGST @ "+(c.rate/2)+"%",money(c.sgst,cur))}
+    else {t+=L("IGST @ "+c.rate+"%",money(c.tax,cur))}
+    if(c.mode!=="export")t+=L("Total GST",money(c.tax,cur));
+    t+=L("Total ("+cur+")",money(c.total,cur),"s-grand");
+    $("sTotals").innerHTML=t;
+    $("sWords").textContent=words(c.total,cur);
+    $("sTaxNote").textContent=c.mode==="export"?"Supply meant for export under LUT without payment of IGST"+(d.lut?" (ARN "+d.lut+").":"."):c.mode==="incl"?"Fee is inclusive of GST at "+c.rate+"%.":"GST at "+c.rate+"% charged on the fee.";
+    $("sNotes").textContent=d.notes||"";
+    $("sNotes").hidden=!d.notes;
+    $("sContact").textContent=d.coWeb?"For questions about this invoice, visit "+d.coWeb:"";
+    $("sSigTitle").textContent=(d.sigTitle?d.sigTitle+", ":"")+d.coName;
+    $("sSigRef").textContent="Signed "+fmtDate(d.invoiceDate)+" · Ref "+d.invoiceNo;
+    $("sLegal").textContent="This is a computer-generated tax invoice and is electronically signed; no physical signature is required.";
+    const w=[];
+    if(cur!=="INR"&&d.taxMode!=="export")w.push("Foreign-currency fees are treated as export of service (zero-rated).");
+    if(c.mode==="export"&&!d.lut)w.push("Add your LUT ARN for zero-rated exports.");
+    if(d.invoiceNo.length>16)w.push("Invoice number is longer than 16 characters.");
+    $("taxWarn").textContent=w.join(" ");$("taxWarn").hidden=!w.length;
+    store.set(KEY_DRAFT,d);
+  }
+
+  function fit(){const box=$("sheetBox"),wrap=$("sheetWrap"),w=$("pane").clientWidth;const s=Math.min(1,w/794);wrap.style.transform="scale("+s+")";box.style.width=(794*s)+"px";box.style.height=(1123*s)+"px"}
+  new ResizeObserver(fit).observe($("pane"));
+
+  function status(msg){$("status").textContent=msg}
+
+  function savedList(){return store.get(KEY_LIST)||[]}
+  function drawSaved(){
+    const list=savedList(), el=$("savedList"); el.innerHTML="";
+    if(!list.length){el.innerHTML='<p class="hint">Invoices you save appear here so you can reopen them later in this browser.</p>';return}
+    list.slice().reverse().forEach(inv=>{
+      const row=document.createElement("div");row.className="saved-item";
+      const meta=document.createElement("div");meta.className="meta";
+      const b=document.createElement("b");b.textContent=inv.invoiceNo;
+      const s=document.createElement("span");s.textContent=inv.studentName+" · "+fmtDate(inv.invoiceDate)+" · "+money(calc(inv).total,inv.currency);
+      meta.append(b,s);
+      const open=document.createElement("button");open.type="button";open.textContent="Open";
+      open.onclick=()=>{fillForm(inv);render();status("Opened "+inv.invoiceNo+".")};
+      const del=document.createElement("button");del.type="button";del.textContent="Remove";
+      del.onclick=()=>{if(del.dataset.armed){store.set(KEY_LIST,savedList().filter(x=>x.invoiceNo!==inv.invoiceNo));drawSaved();status("Removed "+inv.invoiceNo+".")}else{del.dataset.armed="1";del.textContent="Confirm remove"}};
+      row.append(meta,open,del);el.appendChild(row);
+    });
+  }
+
+  $("btnSave").onclick=()=>{const d=readForm();const list=savedList().filter(x=>x.invoiceNo!==d.invoiceNo);list.push(d);
+    status(store.set(KEY_LIST,list)?"Saved "+d.invoiceNo+" to the list.":"This browser won't let the page save. Download the PDF to keep a copy.");drawSaved()};
+
+  $("btnNew").onclick=()=>{const d=readForm();const m=d.invoiceNo.match(/^(.*?)(\d+)$/);
+    const next=m?m[1]+String(Number(m[2])+1).padStart(m[2].length,"0"):d.invoiceNo;
+    const t=new Date();const today=t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")+"-"+String(t.getDate()).padStart(2,"0");
+    Object.assign(d,{invoiceNo:next,invoiceDate:today,studentName:"",studentEmail:"",studentGstin:"",studentAddress:"",notes:""});
+    fillForm(d);render();$("studentName").focus();status("Started "+next+". Company, course and signature details are kept.")};
+
+  $("btnPdf").onclick=async()=>{
+    const btn=$("btnPdf");btn.disabled=true;status("Building the PDF…");
+    try{
+      if(document.fonts&&document.fonts.ready)await document.fonts.ready;
+      const canvas=await html2canvas($("sheet"),{scale:2,backgroundColor:"#ffffff",useCORS:true,
+        onclone:doc=>{const w=doc.getElementById("sheetWrap");w.style.transform="none";const b=doc.getElementById("sheetBox");b.style.width="794px";b.style.height="1123px";b.style.boxShadow="none"}});
+      const pdf=new window.jspdf.jsPDF({unit:"pt",format:"a4",orientation:"portrait"});
+      pdf.addImage(canvas.toDataURL("image/jpeg",0.95),"JPEG",0,0,595.28,841.89);
+      const d=readForm();
+      const name=("Invoice "+d.invoiceNo+" "+d.studentName).replace(/[\/\\:*?"<>|]+/g,"-").trim()+".pdf";
+      pdf.save(name);
+      status("Downloaded "+name+".");
+    }catch(e){
+      console.error(e);status("Couldn't build the PDF. Try again.");
+    }finally{btn.disabled=false}
+  };
+
+  $("form").addEventListener("input",render);
+  $("form").addEventListener("change",render);
+  $("form").addEventListener("submit",e=>e.preventDefault());
+
+  fillForm(store.get(KEY_DRAFT)||DEFAULTS);
+  render();fit();drawSaved();
+})();
+</script>
+
+</body>
+</html>
